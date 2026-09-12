@@ -44,14 +44,25 @@ class PurpleCloudStrategy(Strategy):
 
     def __init__(self, period: int = 40, alpha: float = 0.9,
                  stop_loss_pips: float = 50, take_profit_pips: float = 100,
-                 tick_size: float = 0.05, **kw):
+                 tick_size: float = 0.05, stop_atr_mult: float | None = 1.0,
+                 tp_atr_mult: float | None = 2.0, stop_atr_length: int = 14, **kw):
         super().__init__(period=period, alpha=alpha, stop_loss_pips=stop_loss_pips,
-                          take_profit_pips=take_profit_pips, tick_size=tick_size, **kw)
+                          take_profit_pips=take_profit_pips, tick_size=tick_size,
+                          stop_atr_mult=stop_atr_mult, tp_atr_mult=tp_atr_mult,
+                          stop_atr_length=stop_atr_length, **kw)
         self.x1 = period
         self.alpha = alpha
         pip_size = tick_size * 10  # GetPipSize() for equities in the original script
         self.stop_points = stop_loss_pips * pip_size
         self.tp_points = take_profit_pips * pip_size
+        # Refinement (accepted, see logs/refinement_log.jsonl): scale stop/target
+        # by ATR(14) instead of a fixed price distance, so risk adapts to each
+        # stock's own volatility. Default is now ATR-based (1.0x stop / 2.0x
+        # target); pass stop_atr_mult=None to fall back to the original
+        # script's fixed-point (25/50 INR) behaviour.
+        self.stop_atr_mult = stop_atr_mult
+        self.tp_atr_mult = tp_atr_mult
+        self.stop_atr_length = stop_atr_length
 
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
@@ -61,6 +72,8 @@ class PurpleCloudStrategy(Strategy):
         x2 = atr(df, self.x1) * self.alpha
         df["xh"] = close + x2
         df["xl"] = close - x2
+        if self.stop_atr_mult is not None or self.tp_atr_mult is not None:
+            df["stop_atr"] = atr(df, self.stop_atr_length)
 
         len1, len2 = math.ceil(self.x1 / 4), math.ceil(self.x1 / 2)
         a1 = vwma(hl2 * volume, volume, len1) / vwma(volume, volume, len1)
@@ -88,14 +101,18 @@ class PurpleCloudStrategy(Strategy):
             return Signal(Action.HOLD, symbol, reason="warming up (not enough history)")
 
         price = float(row["close"])
+        atr_val = row.get("stop_atr")
+        stop_dist = (atr_val * self.stop_atr_mult if self.stop_atr_mult is not None and pd.notna(atr_val)
+                     else self.stop_points)
+        tp_dist = (atr_val * self.tp_atr_mult if self.tp_atr_mult is not None and pd.notna(atr_val)
+                   else self.tp_points)
+
         if bool(row["long_entry"]):
             return Signal(Action.BUY, symbol, confidence=0.7,
-                           stop_loss=price - self.stop_points,
-                           take_profit=price + self.tp_points,
+                           stop_loss=price - stop_dist, take_profit=price + tp_dist,
                            reason="Purple Cloud regime flip to bullish (a4<=xl & close>b1)")
         if bool(row["short_entry"]):
             return Signal(Action.SELL, symbol, confidence=0.7,
-                           stop_loss=price + self.stop_points,
-                           take_profit=price - self.tp_points,
+                           stop_loss=price + stop_dist, take_profit=price - tp_dist,
                            reason="Purple Cloud regime flip to bearish (a4>=xh & close<b1)")
         return Signal(Action.HOLD, symbol, reason="no regime flip")
