@@ -11,10 +11,10 @@ import pandas as pd
 
 
 class Action(Enum):
-    BUY = "BUY"
-    SELL = "SELL"
+    BUY = "BUY"    # open (or flip into) a LONG position
+    SELL = "SELL"  # open (or flip into) a SHORT position
     HOLD = "HOLD"
-    EXIT = "EXIT"  # close an open position regardless of direction
+    EXIT = "EXIT"  # close whatever position is open, regardless of direction
 
 
 @dataclass
