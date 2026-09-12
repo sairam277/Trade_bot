@@ -17,6 +17,12 @@ Core logic (unchanged from the original):
   - Fixed stop-loss/take-profit distance in price points (not %), matching
     the original script's pip-distance inputs.
 
+Refinement (accepted, see logs/refinement_log.jsonl): `period` default
+changed from the script's original 40 to 25 after sweeping 15-80 and
+finding 25 was the one value where both in-sample and validation win
+rate/return improved together. `alpha` was also swept (0.6-1.1) and left
+at the original 0.9 — no value tested clearly beat it.
+
 Ported-but-flagged, not silently changed:
   - The original script also computes a Supertrend (`ta.supertrend`) but
     never uses it in the buy/sell logic — it's dead code in the source
@@ -42,7 +48,7 @@ from ..indicators import atr, rma, vwma
 class PurpleCloudStrategy(Strategy):
     name = "purple_cloud"
 
-    def __init__(self, period: int = 40, alpha: float = 0.9,
+    def __init__(self, period: int = 25, alpha: float = 0.9,
                  stop_loss_pips: float = 50, take_profit_pips: float = 100,
                  tick_size: float = 0.05, stop_atr_mult: float | None = 1.0,
                  tp_atr_mult: float | None = 2.0, stop_atr_length: int = 14, **kw):
