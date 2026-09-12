@@ -23,11 +23,13 @@ class PurpleCloudSMC(PurpleCloudStrategy):
     def __init__(self, use_volume_absorption: bool = True, use_fvg: bool = False,
                  use_order_blocks: bool = False, use_fibonacci: bool = False,
                  zone_lookback: int = 20, zone_tolerance_pct: float = 0.005,
-                 fib_swing_lookback: int = 50, **kw):
+                 fib_swing_lookback: int = 50, ob_move_mult: float = 1.5,
+                 ob_atr_length: int = 14, **kw):
         super().__init__(use_volume_absorption=use_volume_absorption, use_fvg=use_fvg,
                           use_order_blocks=use_order_blocks, use_fibonacci=use_fibonacci,
                           zone_lookback=zone_lookback, zone_tolerance_pct=zone_tolerance_pct,
-                          fib_swing_lookback=fib_swing_lookback, **kw)
+                          fib_swing_lookback=fib_swing_lookback, ob_move_mult=ob_move_mult,
+                          ob_atr_length=ob_atr_length, **kw)
         self.use_volume_absorption = use_volume_absorption
         self.use_fvg = use_fvg
         self.use_order_blocks = use_order_blocks
@@ -35,6 +37,8 @@ class PurpleCloudSMC(PurpleCloudStrategy):
         self.zone_lookback = zone_lookback
         self.zone_tolerance_pct = zone_tolerance_pct
         self.fib_swing_lookback = fib_swing_lookback
+        self.ob_move_mult = ob_move_mult
+        self.ob_atr_length = ob_atr_length
 
     def prepare(self, df: pd.DataFrame) -> pd.DataFrame:
         df = super().prepare(df)
@@ -57,7 +61,8 @@ class PurpleCloudSMC(PurpleCloudStrategy):
                                           self.zone_tolerance_pct, include_current=True)
 
         if self.use_order_blocks:
-            bull_lo, bull_hi, bear_lo, bear_hi = order_blocks(df)
+            bull_lo, bull_hi, bear_lo, bear_hi = order_blocks(
+                df, atr_length=self.ob_atr_length, move_mult=self.ob_move_mult)
             long_ok &= near_recent_zone(close, bull_lo, bull_hi, self.zone_lookback,
                                          self.zone_tolerance_pct, include_current=False)
             short_ok &= near_recent_zone(close, bear_lo, bear_hi, self.zone_lookback,
