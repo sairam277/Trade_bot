@@ -106,6 +106,74 @@ def run_backtest(symbol: str, strategy_name: str, lookback_days: int = 730,
     return _run(train_df), _run(val_df)
 
 
+def run_portfolio_backtest(symbols: list[str], strategy_name: str, lookback_days: int = 730,
+                            validation_days: int = 120, capital: float = 10_000.0,
+                            qty_pct: float = 0.10, **strategy_params) -> tuple[BacktestResult, BacktestResult]:
+    """Like run_backtest, but ONE PaperEngine with ONE shared cash pool trades
+    all `symbols` on the same calendar — the realistic case (a single paper/
+    live account trading a watchlist), where signals compete for the same
+    capital instead of each symbol getting its own fresh account.
+
+    Simplification: on days with multiple signals, symbols are evaluated in
+    list order, so earlier symbols get first claim on available cash — a
+    minor systematic bias worth knowing about, not eliminated here.
+    """
+    strat_by_symbol = {sym: _load_strategy(strategy_name, **strategy_params) for sym in symbols}
+    prepared: dict[str, pd.DataFrame] = {}
+    for sym in symbols:
+        prepared[sym] = strat_by_symbol[sym].prepare(get_ohlcv(sym, period_days=lookback_days))
+
+    common_idx = None
+    for df in prepared.values():
+        common_idx = df.index if common_idx is None else common_idx.intersection(df.index)
+    common_idx = common_idx.sort_values()
+    split = len(common_idx) - validation_days
+    train_idx, val_idx = common_idx[:split], common_idx[split:]
+
+    risk = replace(DEFAULT_CONFIG.risk, starting_capital=capital, max_position_pct=qty_pct)
+    config = replace(DEFAULT_CONFIG, risk=risk)
+
+    def _run(idx_slice: pd.Index) -> BacktestResult:
+        engine = PaperEngine(config=config)
+        equity_curve = []
+        for ts in idx_slice:
+            mark_prices = {}
+            for sym in symbols:
+                if ts not in prepared[sym].index:
+                    continue
+                row = prepared[sym].loc[[ts]]
+                price = float(row["close"].iloc[-1])
+                mark_prices[sym] = price
+                signal = strat_by_symbol[sym].evaluate(row, sym)
+                if signal.action != Action.HOLD:
+                    engine.on_signal(signal, price, ts)
+            engine.check_stops(mark_prices, ts)
+            equity_curve.append(engine.equity(mark_prices))
+
+        for sym in list(engine.positions):
+            last_price = mark_prices.get(sym)
+            if last_price is not None:
+                engine.on_signal(Signal(Action.EXIT, sym, reason="backtest end"), last_price, idx_slice[-1])
+
+        eq = np.array(equity_curve) if equity_curve else np.array([config.risk.starting_capital])
+        returns = np.diff(eq) / eq[:-1] if len(eq) > 1 else np.array([0.0])
+        running_max = np.maximum.accumulate(eq)
+        drawdown = (eq - running_max) / running_max
+        wins = [t for t in engine.closed_trades if t.pnl > 0]
+        sharpe = float(np.mean(returns) / (np.std(returns) + 1e-9) * np.sqrt(252)) if len(returns) > 1 else 0.0
+
+        return BacktestResult(
+            trades=len(engine.closed_trades),
+            win_rate=len(wins) / len(engine.closed_trades) if engine.closed_trades else 0.0,
+            total_pnl=sum(t.pnl for t in engine.closed_trades),
+            total_return_pct=(eq[-1] / config.risk.starting_capital - 1) * 100 if len(eq) else 0.0,
+            max_drawdown_pct=float(drawdown.min() * 100) if len(drawdown) else 0.0,
+            sharpe=sharpe,
+        )
+
+    return _run(train_idx), _run(val_idx)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", required=True)

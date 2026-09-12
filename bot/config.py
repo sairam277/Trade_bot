@@ -20,8 +20,12 @@ class RiskConfig:
     """Position sizing and risk limits applied by the paper engine
     regardless of what a strategy asks for."""
 
-    starting_capital: float = 1_000_000.0  # paper money, INR
-    max_position_pct: float = 0.10          # max 10% of capital per position
+    starting_capital: float = 10_000.0      # paper money, INR — matches the user's script
+    max_position_pct: float = 0.20          # 20%: smallest size that lets most watchlist
+                                             # stocks execute at all at 10k capital (see
+                                             # logs/refinement_log.jsonl "qty_pct sweep" note).
+                                             # NOT raised further on validation-window results
+                                             # alone — see that log entry for why.
     max_open_positions: int = 5
     daily_loss_limit_pct: float = 0.03      # stop trading for the day at -3%
     per_trade_stop_loss_pct: float = 0.02   # hard stop if strategy has none
