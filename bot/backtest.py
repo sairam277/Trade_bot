@@ -39,6 +39,7 @@ def _load_strategy(name: str, **params):
     mod_map = {
         "ma_cross": ("example_ma_cross", "MACrossStrategy"),
         "purple_cloud": ("purple_cloud", "PurpleCloudStrategy"),
+        "purple_cloud_smc": ("purple_cloud_smc", "PurpleCloudSMC"),
     }
     if name not in mod_map:
         raise ValueError(f"Unknown strategy '{name}'. Known: {list(mod_map)}")

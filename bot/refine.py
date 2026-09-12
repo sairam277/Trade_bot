@@ -24,11 +24,25 @@ tuning the placeholder MA-crossover example, which isn't useful.
 """
 from __future__ import annotations
 import json
+import numpy as np
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from .config import LOGS_DIR
 
 REFINEMENT_LOG = LOGS_DIR / "refinement_log.jsonl"
+
+
+def _json_default(obj):
+    """Backtest results carry numpy scalars (np.float64, np.bool, ...) in
+    their before/after dicts; make those JSON-serializable instead of
+    requiring every caller to cast them first."""
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 @dataclass
@@ -45,7 +59,7 @@ class RefinementEntry:
 
 def log_refinement(entry: RefinementEntry) -> None:
     with open(REFINEMENT_LOG, "a", encoding="utf-8") as f:
-        f.write(json.dumps(asdict(entry)) + "\n")
+        f.write(json.dumps(asdict(entry), default=_json_default) + "\n")
 
 
 def new_entry(strategy: str, change: str, target_metric: str, before: dict,
